@@ -52,7 +52,7 @@ interface ERPContextType {
   setSelectedWarehouseId: (id: string) => void;
   loginAs: (profileId: string) => void;
   signUp: (email: string, fullName: string, role: UserRole, warehouseId: string | null) => Promise<{ success: boolean; message: string }>;
-  requestAppAccess: (email: string, fullName?: string) => Promise<{ status: 'active' | 'pending' | 'blocked' | 'error'; message: string }>;
+  requestAppAccess: (email: string, fullName?: string, pin?: string) => Promise<{ status: 'active' | 'pending' | 'blocked' | 'pin_required' | 'error'; message: string }>;
   checkLiveApprovalStatus: (email?: string) => Promise<{ approved: boolean; status: string; message: string }>;
   logout: () => void;
   approveUser: (userId: string, role: UserRole, warehouseId: string | null, permissions?: UserPermissions) => void;
@@ -297,8 +297,9 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Play Store / First-Time Onboarding: Request Access by Email
   const requestAppAccess = async (
     email: string,
-    fullName: string = ''
-  ): Promise<{ status: 'active' | 'pending' | 'blocked' | 'error'; message: string }> => {
+    fullName: string = '',
+    pin?: string
+  ): Promise<{ status: 'active' | 'pending' | 'blocked' | 'pin_required' | 'error'; message: string }> => {
     const normalized = email.trim().toLowerCase();
     if (!normalized || !normalized.includes('@')) {
       return { status: 'error', message: 'Please enter a valid work email address.' };
@@ -306,26 +307,36 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const effectiveName = fullName.trim() || normalized.split('@')[0];
 
-    // 1. If System Owner email, recognize instantly
+    // 1. If System Owner email, require Master Security PIN verification
     if (normalized === 'ashenafihailay645@gmail.com') {
-      const owner = profiles.find(p => p.email.toLowerCase() === normalized) || {
-        id: 'user-owner-00',
-        email: 'ashenafihailay645@gmail.com',
-        full_name: 'Ashenafi Hailay (System Owner)',
-        role: 'Admin' as UserRole,
-        company_id: 'comp-ethiopia-erp',
-        warehouse_id: null,
-        status: 'active' as UserStatus,
-        permissions: DEFAULT_ADMIN_PERMISSIONS,
-        created_at: new Date().toISOString(),
+      if (pin !== undefined) {
+        if (pin.trim() === adminSecurityPin.trim()) {
+          const owner = profiles.find(p => p.email.toLowerCase() === normalized) || {
+            id: 'user-owner-00',
+            email: 'ashenafihailay645@gmail.com',
+            full_name: 'Ashenafi Hailay (System Owner)',
+            role: 'Admin' as UserRole,
+            company_id: 'comp-ethiopia-erp',
+            warehouse_id: null,
+            status: 'active' as UserStatus,
+            permissions: DEFAULT_ADMIN_PERMISSIONS,
+            created_at: new Date().toISOString(),
+          };
+          setProfiles(prev => {
+            if (!prev.some(p => p.email.toLowerCase() === normalized)) return [owner, ...prev];
+            return prev.map(p => (p.email.toLowerCase() === normalized ? { ...p, status: 'active' } : p));
+          });
+          setCurrentUserId(owner.id);
+          addToast('success', 'System Owner Authorized', 'Welcome back, Administrator!');
+          return { status: 'active', message: 'Welcome back, Administrator!' };
+        } else {
+          return { status: 'error', message: 'Incorrect Master Security PIN. Owner verification failed.' };
+        }
+      }
+      return {
+        status: 'pin_required',
+        message: 'Master Security PIN verification required to access System Owner account.',
       };
-      setProfiles(prev => {
-        if (!prev.some(p => p.email.toLowerCase() === normalized)) return [owner, ...prev];
-        return prev.map(p => (p.email.toLowerCase() === normalized ? { ...p, status: 'active' } : p));
-      });
-      setCurrentUserId(owner.id);
-      addToast('success', 'System Owner Authorized', 'Welcome back, Administrator!');
-      return { status: 'active', message: 'Welcome back, Administrator!' };
     }
 
     // 2. Query Supabase backend live

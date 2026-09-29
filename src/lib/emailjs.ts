@@ -121,44 +121,72 @@ export async function sendNewUserAlertEmail(params: {
 }): Promise<EmailDispatchResult> {
   const config = getStoredEmailJSConfig();
   const effectiveAdmin = config.adminEmail || 'ashenafihailay645@gmail.com';
+  const timestamp = new Date().toLocaleString('en-US', { timeZone: 'Africa/Addis_Ababa' }) + ' (EAT)';
 
-  const templateParams = {
-    to_email: effectiveAdmin,
-    subject: `🔔 [NEW APP DOWNLOAD / ACCESS REQUEST] Approval Required: ${params.applicantEmail}`,
-    applicant_name: params.applicantName,
-    applicant_email: params.applicantEmail,
-    requested_role: params.assignedRole || 'Staff',
-    timestamp: new Date().toLocaleString('en-US', { timeZone: 'Africa/Addis_Ababa' }) + ' (EAT)',
-    message: `A user (${params.applicantName}, ${params.applicantEmail}) opened the Ethiopia Enterprise ERP app and requested authorization. They are currently locked in 'pending' status awaiting your approval in Supabase. Set status = 'active' in the Supabase 'profiles' table to grant access.`,
-  };
+  const emailSubject = `🔔 [NEW APP ACCESS REQUEST] Approval Required: ${params.applicantEmail}`;
+  const emailMessage = `Hello Administrator,\n\nA new user has downloaded and opened the Ethiopia Enterprise ERP app on their device and requested authorization to access the system.\n\nAPPLICANT DETAILS:\n• Full Name: ${params.applicantName}\n• Work Email: ${params.applicantEmail}\n• Assigned Role: ${params.assignedRole || 'Staff'}\n• Timestamp: ${timestamp}\n• Source: ${params.source || 'Play Store App Download'}\n\nHOW TO APPROVE IN SUPABASE:\n1. Open your Supabase Dashboard (https://supabase.com)\n2. Navigate to Table Editor > 'profiles'\n3. Find row with email: ${params.applicantEmail}\n4. Change status from 'pending' to 'active'\n\nOnce marked 'active', the user's mobile app will instantly unlock.`;
 
-  if (config.serviceId && config.templateId && config.publicKey) {
+  let delivered = false;
+  let deliveryMethod = '';
+
+  // 1. Primary Live Dispatch: FormSubmit API (Direct inbox delivery)
+  try {
+    const response = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(effectiveAdmin)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        applicant_name: params.applicantName,
+        applicant_email: params.applicantEmail,
+        assigned_role: params.assignedRole || 'Staff',
+        timestamp: timestamp,
+        _subject: emailSubject,
+        message: emailMessage,
+        _captcha: 'false',
+        _template: 'table',
+      }),
+    });
+
+    if (response.ok) {
+      delivered = true;
+      deliveryMethod = 'FormSubmit Live Mailer';
+    }
+  } catch (err) {
+    console.warn('FormSubmit live dispatch attempt:', err);
+  }
+
+  // 2. Secondary Dispatch: EmailJS (if live credentials configured)
+  if (!delivered && config.serviceId && config.templateId && config.publicKey && !config.serviceId.includes('mock')) {
     try {
       await emailjs.send(
         config.serviceId,
         config.templateId,
-        templateParams,
+        {
+          to_email: effectiveAdmin,
+          subject: emailSubject,
+          applicant_name: params.applicantName,
+          applicant_email: params.applicantEmail,
+          requested_role: params.assignedRole || 'Staff',
+          timestamp: timestamp,
+          message: emailMessage,
+        },
         config.publicKey
       );
-      return {
-        success: true,
-        simulated: false,
-        message: `Approval alert dispatched to Admin (${effectiveAdmin}) via EmailJS`,
-      };
+      delivered = true;
+      deliveryMethod = 'EmailJS SMTP';
     } catch (err: any) {
       console.warn('EmailJS delivery warning:', err);
-      return {
-        success: true,
-        simulated: true,
-        message: `Approval request registered. Alert queued for ${effectiveAdmin}.`,
-      };
     }
   }
 
   return {
     success: true,
-    simulated: true,
-    message: `Approval request registered. Alert dispatched to Admin (${effectiveAdmin}).`,
+    simulated: !delivered,
+    message: delivered
+      ? `Real email notification delivered to ${effectiveAdmin} via ${deliveryMethod}`
+      : `Access request registered and queued for ${effectiveAdmin}`,
   };
 }
 
