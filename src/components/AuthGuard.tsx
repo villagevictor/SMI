@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Boxes,
   Mail,
@@ -35,6 +35,16 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
   const [submitting, setSubmitting] = useState(false);
   const [checkingApproval, setCheckingApproval] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Auto-check Supabase approval status every 5 seconds while on pending screen
+  useEffect(() => {
+    if (currentUser && currentUser.status === 'pending') {
+      const interval = setInterval(() => {
+        checkLiveApprovalStatus(currentUser.email);
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [currentUser, checkLiveApprovalStatus]);
 
   // 1. If user is signed in and status is ACTIVE -> Allow full app access
   if (currentUser && currentUser.status === 'active') {

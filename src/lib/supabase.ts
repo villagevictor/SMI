@@ -55,6 +55,33 @@ export function getSupabaseClient(): SupabaseClient | null {
 
 export const supabase = getSupabaseClient();
 
+export async function testSupabaseConnection(
+  url: string,
+  anonKey: string
+): Promise<{ success: boolean; message: string }> {
+  if (!url || !anonKey) {
+    return { success: false, message: 'Please enter both Supabase URL and Anon Key.' };
+  }
+  try {
+    const testClient = createClient(url.trim(), anonKey.trim(), {
+      auth: { persistSession: false },
+    });
+    const { error } = await testClient.from('profiles').select('id').limit(1);
+    if (error && error.code !== 'PGRST116') {
+      if (error.message.includes('relation "public.profiles" does not exist') || error.code === '42P01') {
+        return {
+          success: true,
+          message: 'Connected to Supabase! Next step: run the SQL Schema in the SQL Editor.',
+        };
+      }
+      return { success: false, message: error.message };
+    }
+    return { success: true, message: 'Connected to Supabase successfully!' };
+  } catch (err: any) {
+    return { success: false, message: err.message || 'Connection failed.' };
+  }
+}
+
 /**
  * Full Supabase SQL Migration script matching exact user specifications and RLS.
  * Users can run this directly in Supabase SQL editor.
@@ -138,6 +165,12 @@ CREATE TABLE IF NOT EXISTS public.store_backups (
   timestamp TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+-- Grant schema privileges to anon and authenticated roles
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL ROUTINES IN SCHEMA public TO anon, authenticated;
+
 -- Enable Row Level Security (RLS) on all tables
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.warehouses ENABLE ROW LEVEL SECURITY;
@@ -147,62 +180,27 @@ ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.store_backups ENABLE ROW LEVEL SECURITY;
 
--- Base Policies (Active users have read access; Admins/Managers have write access)
-CREATE POLICY "Profiles are viewable by authenticated users"
-  ON public.profiles FOR SELECT TO authenticated USING (true);
+-- Allow anon and authenticated full read/write access
+DROP POLICY IF EXISTS "Allow all for profiles" ON public.profiles;
+CREATE POLICY "Allow all for profiles" ON public.profiles FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
-CREATE POLICY "Users can update their own profile or Admin can update all"
-  ON public.profiles FOR ALL TO authenticated
-  USING (auth.uid() = id OR (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'Admin');
+DROP POLICY IF EXISTS "Allow all for warehouses" ON public.warehouses;
+CREATE POLICY "Allow all for warehouses" ON public.warehouses FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
-CREATE POLICY "Warehouses are viewable by active users"
-  ON public.warehouses FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Warehouses manageable by authenticated staff"
-  ON public.warehouses FOR ALL TO authenticated USING (true);
+DROP POLICY IF EXISTS "Allow all for suppliers" ON public.suppliers;
+CREATE POLICY "Allow all for suppliers" ON public.suppliers FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
-CREATE POLICY "Suppliers are viewable by active users"
-  ON public.suppliers FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Suppliers manageable by authenticated staff"
-  ON public.suppliers FOR ALL TO authenticated USING (true);
+DROP POLICY IF EXISTS "Allow all for materials" ON public.materials;
+CREATE POLICY "Allow all for materials" ON public.materials FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
-CREATE POLICY "Materials are viewable by active users"
-  ON public.materials FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Materials manageable by authenticated staff"
-  ON public.materials FOR ALL TO authenticated USING (true);
+DROP POLICY IF EXISTS "Allow all for transactions" ON public.transactions;
+CREATE POLICY "Allow all for transactions" ON public.transactions FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
-CREATE POLICY "Transactions viewable by active users"
-  ON public.transactions FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Transactions insertable by active users"
-  ON public.transactions FOR INSERT TO authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all for activity_logs" ON public.activity_logs;
+CREATE POLICY "Allow all for activity_logs" ON public.activity_logs FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
-CREATE POLICY "Activity logs viewable by active users"
-  ON public.activity_logs FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Activity logs insertable by all authenticated"
-  ON public.activity_logs FOR INSERT TO authenticated WITH CHECK (true);
-
-CREATE POLICY "Backups manageable by Admins"
-  ON public.store_backups FOR ALL TO authenticated USING (true);
-
--- Automatic Profile Creation on Supabase Auth Sign Up
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger AS $$
-BEGIN
-  INSERT INTO public.profiles (id, email, full_name, role, status)
-  VALUES (
-    new.id,
-    new.email,
-    COALESCE(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
-    'Staff',
-    'pending'
-  );
-  RETURN new;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+DROP POLICY IF EXISTS "Allow all for store_backups" ON public.store_backups;
+CREATE POLICY "Allow all for store_backups" ON public.store_backups FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 `;
 
 export const SUPABASE_SCHEMA_SQL = SUPABASE_SQL_SCHEMA;

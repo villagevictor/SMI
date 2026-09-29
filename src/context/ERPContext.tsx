@@ -384,9 +384,21 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { status: localUser.status, message: 'Your request is pending administrator approval.' };
     }
 
+    // Helper to generate RFC4122 compliant UUID for PostgreSQL UUID columns
+    const generateUUID = () => {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+      }
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = (Math.random() * 16) | 0;
+        const v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+      });
+    };
+
     // 4. Brand New Play Store Install: Create profile with pending status
     const newProfile: Profile = {
-      id: 'usr-' + Math.random().toString(36).substr(2, 9),
+      id: generateUUID(),
       email: normalized,
       full_name: effectiveName,
       role: 'Staff',
@@ -403,7 +415,23 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Sync to Supabase
     if (supabase) {
       try {
-        await supabase.from('profiles').upsert([newProfile]);
+        const { error: upsertError } = await supabase.from('profiles').upsert([newProfile]);
+        if (upsertError) {
+          console.warn('Supabase primary upsert error:', upsertError.message);
+          // Fallback insert without client-generated ID in case DB uses auto-generated UUID
+          const { error: fallbackError } = await supabase.from('profiles').insert([
+            {
+              email: newProfile.email,
+              full_name: newProfile.full_name,
+              role: 'Staff',
+              company_id: 'comp-ethiopia-erp',
+              status: 'pending',
+            },
+          ]);
+          if (fallbackError) {
+            console.error('Supabase fallback insert error:', fallbackError.message);
+          }
+        }
       } catch (err) {
         console.warn('Supabase new profile sync warning:', err);
       }
@@ -563,6 +591,19 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       role,
       warehouse_id: warehouseId,
     });
+
+    const supabase = getSupabaseClient();
+    if (supabase && targetUser?.email) {
+      supabase
+        .from('profiles')
+        .update({
+          status: 'active',
+          role,
+          warehouse_id: warehouseId,
+        })
+        .eq('email', targetUser.email.toLowerCase())
+        .then(() => {});
+    }
   };
 
   const updateUserStatus = (userId: string, status: UserStatus) => {
@@ -575,6 +616,15 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       user: targetUser?.full_name,
       new_status: status,
     });
+
+    const supabase = getSupabaseClient();
+    if (supabase && targetUser?.email) {
+      supabase
+        .from('profiles')
+        .update({ status })
+        .eq('email', targetUser.email.toLowerCase())
+        .then(() => {});
+    }
   };
 
   const updateUserRole = (userId: string, role: UserRole) => {
