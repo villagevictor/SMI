@@ -384,21 +384,57 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { status: localUser.status, message: 'Your request is pending administrator approval.' };
     }
 
-    // Helper to generate RFC4122 compliant UUID for PostgreSQL UUID columns
-    const generateUUID = () => {
-      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-        return crypto.randomUUID();
-      }
-      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-        const r = (Math.random() * 16) | 0;
-        const v = c === 'x' ? r : (r & 0x3) | 0x8;
-        return v.toString(16);
-      });
-    };
-
     // 4. Brand New Play Store Install: Create profile with pending status
+    let assignedUserId = 'usr-' + Math.random().toString(36).substr(2, 9);
+
+    // Sync to Supabase: Sign up user via auth.signUp to satisfy foreign key constraint and trigger profile creation
+    if (supabase) {
+      try {
+        const generatedPassword = `ErpApp2026!_${normalized.replace(/[^a-zA-Z0-9]/g, '')}`;
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: normalized,
+          password: generatedPassword,
+          options: {
+            data: {
+              full_name: effectiveName,
+            },
+          },
+        });
+
+        if (authData?.user?.id) {
+          assignedUserId = authData.user.id;
+          // Ensure profile has correct status, role, and details
+          await supabase.from('profiles').upsert({
+            id: authData.user.id,
+            email: normalized,
+            full_name: effectiveName,
+            role: 'Staff',
+            status: 'pending',
+          });
+        } else if (authError) {
+          console.warn('Supabase auth signup note:', authError.message);
+          // If auth user already exists, update their profile
+          const { data: existingProf } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('email', normalized)
+            .maybeSingle();
+
+          if (existingProf?.id) {
+            assignedUserId = existingProf.id;
+            await supabase
+              .from('profiles')
+              .update({ status: 'pending', full_name: effectiveName })
+              .eq('id', existingProf.id);
+          }
+        }
+      } catch (err) {
+        console.warn('Supabase new profile sync error:', err);
+      }
+    }
+
     const newProfile: Profile = {
-      id: generateUUID(),
+      id: assignedUserId,
       email: normalized,
       full_name: effectiveName,
       role: 'Staff',
@@ -409,33 +445,8 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       created_at: new Date().toISOString(),
     };
 
-    setProfiles(prev => [...prev, newProfile]);
+    setProfiles(prev => [...prev.filter(p => p.email.toLowerCase() !== normalized), newProfile]);
     setCurrentUserId(newProfile.id);
-
-    // Sync to Supabase
-    if (supabase) {
-      try {
-        const { error: upsertError } = await supabase.from('profiles').upsert([newProfile]);
-        if (upsertError) {
-          console.warn('Supabase primary upsert error:', upsertError.message);
-          // Fallback insert without client-generated ID in case DB uses auto-generated UUID
-          const { error: fallbackError } = await supabase.from('profiles').insert([
-            {
-              email: newProfile.email,
-              full_name: newProfile.full_name,
-              role: 'Staff',
-              company_id: 'comp-ethiopia-erp',
-              status: 'pending',
-            },
-          ]);
-          if (fallbackError) {
-            console.error('Supabase fallback insert error:', fallbackError.message);
-          }
-        }
-      } catch (err) {
-        console.warn('Supabase new profile sync warning:', err);
-      }
-    }
 
     // Send immediate Email Alert to Admin (ashenafihailay645@gmail.com)
     await sendNewUserAlertEmail({
