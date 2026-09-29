@@ -4,20 +4,18 @@ import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { BottomNav } from './components/BottomNav';
 import { ToastContainer } from './components/Toast';
-import { AuthGuard } from './components/AuthGuard';
 import { ThermalReceiptModal } from './components/ThermalReceiptModal';
+import { AuthGuard } from './components/AuthGuard';
 
-// Views
+// Views - Exactly the 9 requested business modules
 import { DashboardView } from './views/DashboardView';
 import { MaterialsView } from './views/MaterialsView';
 import { StockInView } from './views/StockInView';
 import { StockOutView } from './views/StockOutView';
 import { InvoicesView } from './views/InvoicesView';
+import { DailyReportView } from './views/DailyReportView';
 import { WarehousesView } from './views/WarehousesView';
 import { SuppliersView } from './views/SuppliersView';
-import { AdminView } from './views/AdminView';
-import { SecurityPinView } from './views/SecurityPinView';
-import { ActivityLogsView } from './views/ActivityLogsView';
 import { BackupsView } from './views/BackupsView';
 import { SettingsView } from './views/SettingsView';
 
@@ -28,83 +26,27 @@ function ERPContent() {
   const renderActiveView = () => {
     switch (activeView) {
       case 'dashboard':
-        return (
-          <AuthGuard requiredModule="dashboard">
-            <DashboardView setActiveView={setActiveView} />
-          </AuthGuard>
-        );
+        return <DashboardView setActiveView={setActiveView} />;
       case 'materials':
-        return (
-          <AuthGuard requiredModule="materials">
-            <MaterialsView />
-          </AuthGuard>
-        );
+        return <MaterialsView />;
       case 'stock_in':
-        return (
-          <AuthGuard requiredModule="stock_in">
-            <StockInView />
-          </AuthGuard>
-        );
+        return <StockInView />;
       case 'stock_out':
-        return (
-          <AuthGuard requiredModule="stock_out">
-            <StockOutView />
-          </AuthGuard>
-        );
+        return <StockOutView />;
       case 'invoices':
-        return (
-          <AuthGuard requiredModule="invoices">
-            <InvoicesView />
-          </AuthGuard>
-        );
+        return <InvoicesView />;
+      case 'daily_report':
+        return <DailyReportView />;
       case 'warehouses':
-        return (
-          <AuthGuard requiredModule="warehouses">
-            <WarehousesView />
-          </AuthGuard>
-        );
+        return <WarehousesView />;
       case 'suppliers':
-        return (
-          <AuthGuard requiredModule="suppliers">
-            <SuppliersView />
-          </AuthGuard>
-        );
-      case 'admin':
-        return (
-          <AuthGuard requiredModule="admin">
-            <AdminView setActiveView={setActiveView} />
-          </AuthGuard>
-        );
-      case 'security_pin':
-        return (
-          <AuthGuard requiredModule="admin">
-            <SecurityPinView setActiveView={setActiveView} />
-          </AuthGuard>
-        );
-      case 'activity_logs':
-        return (
-          <AuthGuard requiredModule="activity_logs">
-            <ActivityLogsView />
-          </AuthGuard>
-        );
+        return <SuppliersView />;
       case 'backups':
-        return (
-          <AuthGuard requiredModule="backups">
-            <BackupsView />
-          </AuthGuard>
-        );
+        return <BackupsView />;
       case 'settings':
-        return (
-          <AuthGuard requiredModule="settings">
-            <SettingsView />
-          </AuthGuard>
-        );
+        return <SettingsView />;
       default:
-        return (
-          <AuthGuard requiredModule="dashboard">
-            <DashboardView setActiveView={setActiveView} />
-          </AuthGuard>
-        );
+        return <DashboardView setActiveView={setActiveView} />;
     }
   };
 
@@ -113,11 +55,19 @@ function ERPContent() {
       {/* Toast Notifications */}
       <ToastContainer />
 
-      {/* Global Thermal Receipt & WhatsApp Modal */}
+      {/* Printable Thermal Receipt Modal */}
       <ThermalReceiptModal />
 
-      <div className="flex flex-1 min-h-screen">
-        {/* Responsive Slate Sidebar */}
+      {/* Top Header */}
+      <Header
+        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        activeView={activeView}
+        setActiveView={setActiveView}
+      />
+
+      {/* Main Body */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Sidebar - 9 Modules Only */}
         <Sidebar
           activeView={activeView}
           setActiveView={setActiveView}
@@ -125,34 +75,26 @@ function ERPContent() {
           onClose={() => setIsSidebarOpen(false)}
         />
 
-        {/* Main Content Area */}
-        <div className="flex-1 flex flex-col min-w-0 lg:pl-64">
-          {/* Top Header */}
-          <Header
-            onToggleSidebar={() => setIsSidebarOpen(prev => !prev)}
-            activeView={activeView}
-            setActiveView={setActiveView}
-          />
-
-          {/* Page Body */}
-          <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-20 lg:pb-8">
+        {/* Central Workspace */}
+        <main className="flex-1 overflow-y-auto lg:pl-64 p-4 sm:p-6 lg:p-8 pb-20 lg:pb-8">
+          <div className="max-w-7xl mx-auto space-y-6">
             {renderActiveView()}
-          </main>
-        </div>
+          </div>
+        </main>
       </div>
 
-      {/* Mobile Bottom Navigation */}
+      {/* Mobile Bottom Navigation (5 Core Fast Actions) */}
       <BottomNav activeView={activeView} setActiveView={setActiveView} />
     </div>
   );
 }
 
-export function App() {
+export default function App() {
   return (
     <ERPProvider>
-      <ERPContent />
+      <AuthGuard>
+        <ERPContent />
+      </AuthGuard>
     </ERPProvider>
   );
 }
-
-export default App;

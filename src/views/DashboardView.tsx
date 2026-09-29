@@ -148,6 +148,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ setActiveView }) =
           </button>
 
           <button
+            onClick={() => setActiveView('daily_report')}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-semibold shadow-xs transition"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+            <span>Daily Report</span>
+          </button>
+
+          <button
             onClick={() => setActiveView('materials')}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold shadow-xs transition"
           >

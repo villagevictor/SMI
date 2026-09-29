@@ -164,8 +164,8 @@ export const INITIAL_PROFILES: Profile[] = [
   },
   {
     id: 'user-manager-02',
-    email: 'selamawit@enterprise-erp.et',
-    full_name: 'Selamawit Bekele (Manager)',
+    email: 'manager@enterprise-erp.et',
+    full_name: 'Operations Manager',
     role: 'Manager',
     company_id: 'comp-ethiopia-erp',
     warehouse_id: 'wh-akaki-02',
@@ -245,7 +245,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     material_name: 'Dangote Portland High-Strength Cement 42.5N',
     material_unit: 'Bag',
     warehouse_name: 'Akaki Kality Logistics Center',
-    performer_name: 'Selamawit Bekele (Manager)',
+    performer_name: 'Operations Manager',
   },
   {
     id: 'tx-003',
@@ -326,7 +326,7 @@ export const INITIAL_ACTIVITY_LOGS: ActivityLog[] = [
   {
     id: 'act-003',
     user_id: 'user-manager-02',
-    user_name: 'Selamawit Bekele (Manager)',
+    user_name: 'Operations Manager',
     action: 'Stock Out & Invoice Issued',
     details: { invoice: 'INV-2026-0091', customer: 'Sunshine Construction PLC', total_etb: 46000 },
     timestamp: '2026-09-12T14:15:00Z',

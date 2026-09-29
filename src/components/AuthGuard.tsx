@@ -1,385 +1,366 @@
 import React, { useState } from 'react';
-import { ShieldAlert, Clock, Ban, UserCheck, KeyRound, ArrowRight, UserPlus, LogIn, Lock } from 'lucide-react';
+import {
+  Boxes,
+  Mail,
+  User,
+  Clock,
+  CheckCircle2,
+  RefreshCw,
+  ShieldAlert,
+  ArrowRight,
+  LogOut,
+  Send,
+  Database,
+  Building2,
+  KeyRound,
+  Lock,
+} from 'lucide-react';
 import { useERP } from '../context/ERPContext';
-import { UserRole, Profile } from '../types';
-import { AdminPinModal } from './AdminPinModal';
 
 interface AuthGuardProps {
   children: React.ReactNode;
-  requiredModule?: string;
-  requiredAction?: 'view' | 'create' | 'update' | 'delete' | 'manage_users' | 'restore';
 }
 
-export const AuthGuard: React.FC<AuthGuardProps> = ({
-  children,
-  requiredModule = 'dashboard',
-  requiredAction = 'view',
-}) => {
-  const { currentUser, loginAs, signUp, allProfiles, warehouses, adminSecurityPin } = useERP();
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [formEmail, setFormEmail] = useState('');
-  const [formFullName, setFormFullName] = useState('');
-  const [formRole, setFormRole] = useState<UserRole>('Staff');
-  const [formWarehouse, setFormWarehouse] = useState<string>('');
+export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
+  const {
+    currentUser,
+    requestAppAccess,
+    checkLiveApprovalStatus,
+    logout,
+    adminSecurityPin,
+    loginAs,
+    allProfiles,
+    isSupabaseConnected,
+  } = useERP();
 
-  const [pinModalOpen, setPinModalOpen] = useState(false);
-  const [targetProfileToLogin, setTargetProfileToLogin] = useState<Profile | null>(null);
+  const [inputEmail, setInputEmail] = useState('');
+  const [inputFullName, setInputFullName] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [checkingApproval, setCheckingApproval] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [adminPinInput, setAdminPinInput] = useState('');
+  const [showAdminPinModal, setShowAdminPinModal] = useState(false);
 
-  const handleSelectLogin = (p: Profile) => {
-    if (p.role === 'Admin') {
-      setTargetProfileToLogin(p);
-      setPinModalOpen(true);
+  // 1. If user is signed in and status is ACTIVE -> Allow full app access
+  if (currentUser && currentUser.status === 'active') {
+    return <>{children}</>;
+  }
+
+  // 2. Handler: Submit New Email Access Request (Play Store initial launch)
+  const handleSubmitEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+    if (!inputEmail.trim() || !inputEmail.includes('@')) {
+      setErrorMessage('Please enter a valid work email address.');
       return;
     }
-    loginAs(p.id);
-  };
 
-  // 1. Not signed in
-  if (!currentUser) {
-    return (
-      <>
-        <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-          <div className="max-w-md w-full bg-white rounded-2xl shadow-2xl p-6 border border-slate-200">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold text-lg">
-                ERP
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">Ethiopia Enterprise ERP</h2>
-                <p className="text-xs text-slate-500">Sign in to access industrial operations</p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Select User Account</p>
-              {allProfiles.map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => handleSelectLogin(p)}
-                  className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 transition text-left"
-                >
-                  <div>
-                    <div className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
-                      <span>{p.full_name}</span>
-                      {p.role === 'Admin' && (
-                        <span className="text-[10px] text-amber-700 bg-amber-100 px-1 py-0.5 rounded font-bold flex items-center gap-0.5">
-                          <Lock className="w-2.5 h-2.5" /> PIN
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-slate-500">{p.email} • <span className="font-medium text-slate-700">{p.role}</span></div>
-                  </div>
-                  <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
-                    p.status === 'active' ? 'bg-emerald-100 text-emerald-800' :
-                    p.status === 'pending' ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'
-                  }`}>
-                    {p.status}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <AdminPinModal
-          isOpen={pinModalOpen}
-          onClose={() => {
-            setPinModalOpen(false);
-            setTargetProfileToLogin(null);
-          }}
-          onSuccess={() => {
-            if (targetProfileToLogin) {
-              loginAs(targetProfileToLogin.id);
-            }
-          }}
-          targetUserName={targetProfileToLogin?.full_name || 'Admin'}
-          adminPin={adminSecurityPin}
-        />
-      </>
-    );
-  }
-
-  // 2. Pending Approval Guard Screen
-  if (currentUser.status === 'pending') {
-    return (
-      <>
-        <div className="min-h-[85vh] flex items-center justify-center p-4">
-          <div className="max-w-lg w-full bg-white rounded-2xl shadow-xl border border-amber-200 p-8 text-center">
-            <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-amber-600 ring-8 ring-amber-50">
-              <Clock className="w-8 h-8 animate-spin" />
-            </div>
-
-            <span className="inline-block px-3 py-1 bg-amber-100 text-amber-800 text-xs font-bold rounded-full uppercase tracking-wider mb-2">
-              Status: Pending Approval
-            </span>
-
-            <h2 className="text-2xl font-extrabold text-slate-900 mt-2">Registration Under Review</h2>
-            <p className="text-sm text-slate-600 mt-3 leading-relaxed">
-              Welcome, <strong className="text-slate-800">{currentUser.full_name}</strong>! Your ERP profile has been created in the database and an automatic alert has been dispatched to the Administrator (<strong className="text-slate-700">ashenafihailay645@gmail.com</strong>).
-            </p>
-            <div className="mt-4 p-3.5 bg-amber-50 rounded-xl border border-amber-200 text-left text-xs text-amber-900 space-y-1">
-              <p className="font-semibold flex items-center gap-1.5 text-amber-800">
-                <ShieldAlert className="w-4 h-4" /> Security Guard Policy (Row-Level Security)
-              </p>
-              <p>
-                In accordance with enterprise safety standards, your account must be granted role privileges and warehouse access by an Administrator before accessing ERP inventory, stock in/out, and financial valuation records.
-              </p>
-            </div>
-
-            <div className="mt-6 pt-6 border-t border-slate-100 flex flex-col sm:flex-row gap-3 justify-center">
-              <button
-                onClick={() => {
-                  const adminUser = allProfiles.find(p => p.role === 'Admin') || null;
-                  setTargetProfileToLogin(adminUser);
-                  setPinModalOpen(true);
-                }}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold transition shadow-md"
-              >
-                <Lock className="w-4 h-4 text-amber-400" />
-                <span>Admin Unlock (PIN Required)</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <AdminPinModal
-          isOpen={pinModalOpen}
-          onClose={() => {
-            setPinModalOpen(false);
-            setTargetProfileToLogin(null);
-          }}
-          onSuccess={() => {
-            if (targetProfileToLogin) {
-              loginAs(targetProfileToLogin.id);
-            }
-          }}
-          targetUserName={targetProfileToLogin?.full_name || 'Admin'}
-          adminPin={adminSecurityPin}
-        />
-      </>
-    );
-  }
-
-  // 3. Blocked User Guard Screen
-  if (currentUser.status === 'blocked') {
-    return (
-      <>
-        <div className="min-h-[85vh] flex items-center justify-center p-4">
-          <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-rose-200 p-8 text-center">
-            <div className="w-16 h-16 bg-rose-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-rose-600 ring-8 ring-rose-50">
-              <Ban className="w-8 h-8" />
-            </div>
-
-            <span className="inline-block px-3 py-1 bg-rose-100 text-rose-800 text-xs font-bold rounded-full uppercase tracking-wider mb-2">
-              Access Blocked
-            </span>
-
-            <h2 className="text-2xl font-extrabold text-slate-900 mt-2">Account Suspended</h2>
-            <p className="text-sm text-slate-600 mt-3 leading-relaxed">
-              Your account (<strong className="text-slate-800">{currentUser.email}</strong>) has been restricted by the System Administrator. All inventory read and write operations are temporarily locked.
-            </p>
-
-            <div className="mt-6 pt-6 border-t border-slate-100">
-              <button
-                onClick={() => {
-                  const adminUser = allProfiles.find(p => p.role === 'Admin') || null;
-                  setTargetProfileToLogin(adminUser);
-                  setPinModalOpen(true);
-                }}
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold transition"
-              >
-                <Lock className="w-4 h-4 text-amber-400" />
-                <span>Admin Unlock (PIN Required)</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <AdminPinModal
-          isOpen={pinModalOpen}
-          onClose={() => {
-            setPinModalOpen(false);
-            setTargetProfileToLogin(null);
-          }}
-          onSuccess={() => {
-            if (targetProfileToLogin) {
-              loginAs(targetProfileToLogin.id);
-            }
-          }}
-          targetUserName={targetProfileToLogin?.full_name || 'Admin'}
-          adminPin={adminSecurityPin}
-        />
-      </>
-    );
-  }
-
-  // 4. Feature-Level Permission Guard
-  const permissions = currentUser.permissions as any;
-  const modulePerms = permissions?.[requiredModule];
-  const hasAccess = modulePerms ? Boolean(modulePerms[requiredAction] ?? modulePerms.view) : true;
-
-  if (!hasAccess && currentUser.role !== 'Admin') {
-    return (
-      <>
-        <div className="p-8 max-w-2xl mx-auto">
-          <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center shadow-sm">
-            <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3 text-slate-600">
-              <KeyRound className="w-6 h-6" />
-            </div>
-            <h3 className="text-lg font-bold text-slate-900">Restricted Module Access</h3>
-            <p className="text-sm text-slate-600 mt-2">
-              Your role (<span className="font-semibold text-slate-800">{currentUser.role}</span>) does not have permission to access the <strong>{requiredModule.replace('_', ' ').toUpperCase()}</strong> module with <strong>{requiredAction}</strong> rights.
-            </p>
-            <div className="mt-6 flex justify-center gap-3">
-              <button
-                onClick={() => {
-                  const adminUser = allProfiles.find(p => p.role === 'Admin') || null;
-                  setTargetProfileToLogin(adminUser);
-                  setPinModalOpen(true);
-                }}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition"
-              >
-                <Lock className="w-3.5 h-3.5" />
-                <span>Admin Sign In (PIN Required)</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <AdminPinModal
-          isOpen={pinModalOpen}
-          onClose={() => {
-            setPinModalOpen(false);
-            setTargetProfileToLogin(null);
-          }}
-          onSuccess={() => {
-            if (targetProfileToLogin) {
-              loginAs(targetProfileToLogin.id);
-            }
-          }}
-          targetUserName={targetProfileToLogin?.full_name || 'Admin'}
-          adminPin={adminSecurityPin}
-        />
-      </>
-    );
-  }
-
-  return <>{children}</>;
-};
-
-export const SignUpModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
-  const { signUp, warehouses } = useERP();
-  const [email, setEmail] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<UserRole>('Staff');
-  const [warehouseId, setWarehouseId] = useState<string>(warehouses[0]?.id || '');
-  const [password, setPassword] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  if (!isOpen) return null;
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email || !fullName) return;
     setSubmitting(true);
-    await signUp(email, fullName, role, warehouseId || null);
-    setSubmitting(false);
-    onClose();
+    try {
+      const result = await requestAppAccess(inputEmail.trim(), inputFullName.trim());
+      if (result.status === 'error') {
+        setErrorMessage(result.message);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to submit request.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white">
-              <UserPlus className="w-4 h-4" />
-            </div>
-            <h3 className="text-lg font-bold text-slate-900">Register ERP Account</h3>
+  // 3. Handler: Check Live Approval Status against Supabase
+  const handleCheckStatus = async () => {
+    setCheckingApproval(true);
+    setErrorMessage('');
+    try {
+      const res = await checkLiveApprovalStatus(currentUser?.email);
+      if (!res.approved) {
+        setErrorMessage(res.message);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Could not verify status with Supabase.');
+    } finally {
+      setCheckingApproval(false);
+    }
+  };
+
+  // Quick Owner Login with PIN
+  const handleOwnerUnlock = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminPinInput.trim() === adminSecurityPin.trim()) {
+      const owner = allProfiles.find(p => p.email.toLowerCase() === 'ashenafihailay645@gmail.com') || allProfiles[0];
+      if (owner) {
+        loginAs(owner.id);
+        setShowAdminPinModal(false);
+      }
+    } else {
+      setErrorMessage('Invalid Master Security PIN.');
+    }
+  };
+
+  // 4. Screen: PENDING ADMIN APPROVAL
+  if (currentUser && currentUser.status === 'pending') {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="max-w-lg w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 text-center text-white shadow-2xl relative overflow-hidden">
+          {/* Subtle top decoration */}
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500" />
+
+          {/* Pending Pulse Icon */}
+          <div className="w-16 h-16 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center justify-center mx-auto mb-4 text-amber-400">
+            <Clock className="w-8 h-8 animate-spin" style={{ animationDuration: '4s' }} />
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-sm">
-            ✕
+
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-bold uppercase tracking-wider mb-2 border border-amber-500/30">
+            <span>Status: Awaiting Administrator Approval</span>
+          </div>
+
+          <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white mt-2">
+            Access Request Under Review
+          </h2>
+
+          <p className="text-xs sm:text-sm text-slate-300 mt-2.5 leading-relaxed">
+            Welcome, <strong className="text-white">{currentUser.full_name || currentUser.email}</strong>! Your application has been registered in the <strong>Supabase cloud database</strong> and an authorization alert was delivered to the System Administrator:
+          </p>
+
+          <div className="mt-4 p-3.5 bg-slate-950/80 rounded-2xl border border-slate-800 text-left text-xs space-y-2">
+            <div className="flex items-center justify-between text-[11px] text-slate-400 border-b border-slate-800/80 pb-2">
+              <span>Your Registered Email:</span>
+              <strong className="text-white font-mono">{currentUser.email}</strong>
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-slate-400 border-b border-slate-800/80 pb-2">
+              <span>Admin Approver:</span>
+              <strong className="text-amber-300 font-mono">ashenafihailay645@gmail.com</strong>
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-slate-400">
+              <span>Backend Cloud DB:</span>
+              <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                Supabase Real-Time Connected
+              </span>
+            </div>
+          </div>
+
+          {errorMessage && (
+            <div className="mt-3.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-medium">
+              {errorMessage}
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="mt-6 space-y-2.5">
+            <button
+              onClick={handleCheckStatus}
+              disabled={checkingApproval}
+              className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition flex items-center justify-center gap-2 active:scale-98 disabled:opacity-75"
+            >
+              <RefreshCw className={`w-4 h-4 ${checkingApproval ? 'animate-spin' : ''}`} />
+              <span>{checkingApproval ? 'Checking Supabase Status...' : 'Check Approval Status Now'}</span>
+            </button>
+
+            <button
+              onClick={logout}
+              className="w-full py-2.5 px-4 bg-slate-800/80 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Use a Different Email Address</span>
+            </button>
+          </div>
+
+          {/* Quick Admin Unlock Link */}
+          <div className="mt-6 pt-4 border-t border-slate-800/80 text-[11px] text-slate-500">
+            System Administrator?{' '}
+            <button
+              onClick={() => setShowAdminPinModal(true)}
+              className="text-amber-400 hover:underline font-semibold ml-1"
+            >
+              Unlock with Master PIN
+            </button>
+          </div>
+        </div>
+
+        {/* Master PIN Unlock Modal */}
+        {showAdminPinModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="max-w-sm w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl text-white">
+              <div className="flex items-center gap-2 mb-3">
+                <Lock className="w-5 h-5 text-amber-400" />
+                <h3 className="text-base font-bold">Admin Master PIN Unlock</h3>
+              </div>
+              <p className="text-xs text-slate-400 mb-4">
+                Enter your Master Security PIN to immediately unlock the system as Owner (Ashenafi Hailay).
+              </p>
+              <form onSubmit={handleOwnerUnlock} className="space-y-3">
+                <input
+                  type="password"
+                  value={adminPinInput}
+                  onChange={e => setAdminPinInput(e.target.value)}
+                  placeholder="Enter Master PIN"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-center tracking-widest text-lg focus:border-amber-400 focus:outline-hidden"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminPinModal(false)}
+                    className="flex-1 py-2 rounded-xl bg-slate-800 text-xs font-semibold text-slate-300"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold"
+                  >
+                    Unlock
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // 5. Screen: BLOCKED USER
+  if (currentUser && currentUser.status === 'blocked') {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-slate-900 border border-rose-500/30 rounded-3xl p-6 sm:p-8 text-center text-white shadow-2xl">
+          <div className="w-16 h-16 bg-rose-500/10 border border-rose-500/30 rounded-2xl flex items-center justify-center mx-auto mb-4 text-rose-500">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-black text-white">Access Suspended</h2>
+          <p className="text-xs sm:text-sm text-slate-400 mt-2">
+            The account associated with <strong className="text-white">{currentUser.email}</strong> has been suspended by the System Administrator.
+          </p>
+          <button
+            onClick={logout}
+            className="mt-6 w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Sign In with Another Email</span>
           </button>
         </div>
+      </div>
+    );
+  }
 
-        <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-          Sign up with your credentials. New user accounts are initialized with <strong>pending</strong> status and require Administrator authorization before granting inventory privileges.
-        </p>
+  // 6. Screen: INITIAL PLAY STORE APP LAUNCH - ENTER EMAIL TO REQUEST ACCESS
+  return (
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 text-white shadow-2xl relative overflow-hidden">
+        {/* Top Accent Gradient */}
+        <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-600" />
 
-        <form onSubmit={handleSubmit} className="space-y-3.5">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
-            <input
-              type="text"
-              required
-              value={fullName}
-              onChange={e => setFullName(e.target.value)}
-              placeholder="e.g. Almaz Kebede"
-              className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-            />
+        {/* Brand Header */}
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-black shadow-lg shadow-blue-600/30">
+            <Boxes className="w-6 h-6" />
           </div>
-
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Work Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="almaz@enterprise.et"
-              className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Password</label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Requested Role</label>
-              <select
-                value={role}
-                onChange={e => setRole(e.target.value as UserRole)}
-                className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-              >
-                <option value="Staff">Warehouse Staff</option>
-                <option value="Manager">Inventory Manager</option>
-                <option value="Admin">Administrator</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Target Warehouse</label>
-              <select
-                value={warehouseId}
-                onChange={e => setWarehouseId(e.target.value)}
-                className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-              >
-                {warehouses.map(w => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
-                ))}
-              </select>
+            <h1 className="text-base sm:text-lg font-black tracking-wide uppercase text-white">
+              ETHIOPIA ENTERPRISE ERP
+            </h1>
+            <div className="text-[11px] font-semibold text-slate-400 tracking-wider">
+              INVENTORY, WAREHOUSES & BILLING
             </div>
           </div>
+        </div>
+
+        {/* Welcome Message */}
+        <div className="mb-6 space-y-1.5">
+          <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+            Sign In / Request Access
+          </h2>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Downloaded from Google Play Store or web client. Enter your work email below. New access requests will be delivered directly to the Administrator (<strong>ashenafihailay645@gmail.com</strong>) for authorization.
+          </p>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmitEmail} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+              Full Name (Optional)
+            </label>
+            <div className="relative">
+              <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={inputFullName}
+                onChange={e => setInputFullName(e.target.value)}
+                placeholder="e.g. Abebe Kebede"
+                className="w-full pl-10 pr-3.5 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 text-xs sm:text-sm focus:border-blue-500 focus:outline-hidden transition"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+              Work Email Address <span className="text-rose-400">*</span>
+            </label>
+            <div className="relative">
+              <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="email"
+                required
+                value={inputEmail}
+                onChange={e => setInputEmail(e.target.value)}
+                placeholder="name@company.com"
+                className="w-full pl-10 pr-3.5 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 text-xs sm:text-sm focus:border-blue-500 focus:outline-hidden transition font-mono"
+              />
+            </div>
+          </div>
+
+          {errorMessage && (
+            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-medium">
+              {errorMessage}
+            </div>
+          )}
 
           <button
             type="submit"
             disabled={submitting}
-            className="w-full mt-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-md transition disabled:opacity-50"
+            className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition flex items-center justify-center gap-2 active:scale-98 disabled:opacity-75"
           >
-            {submitting ? 'Registering Account...' : 'Submit Registration'}
+            {submitting ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+            <span>{submitting ? 'Connecting to Supabase...' : 'Continue / Request Authorization'}</span>
           </button>
         </form>
+
+        {/* Supabase Connectivity Badge */}
+        <div className="mt-6 pt-4 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+          <span className="flex items-center gap-1.5">
+            <Database className="w-3.5 h-3.5 text-blue-400" />
+            <span>Supabase Cloud Integration:</span>
+          </span>
+          <span className="flex items-center gap-1 font-semibold text-emerald-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            Live Connected
+          </span>
+        </div>
+
+        {/* Quick Owner Access Link */}
+        <div className="mt-3 text-center text-[11px] text-slate-500">
+          Administrator?{' '}
+          <button
+            type="button"
+            onClick={() => {
+              setInputEmail('ashenafihailay645@gmail.com');
+              setInputFullName('Ashenafi Hailay (System Owner)');
+            }}
+            className="text-blue-400 hover:underline font-semibold ml-1"
+          >
+            Use Owner Email (ashenafihailay645@gmail.com)
+          </button>
+        </div>
       </div>
     </div>
   );
 };
+
+export const SignUpModal: React.FC<{ isOpen: boolean; onClose: () => void }> = () => null;

@@ -52,6 +52,8 @@ interface ERPContextType {
   setSelectedWarehouseId: (id: string) => void;
   loginAs: (profileId: string) => void;
   signUp: (email: string, fullName: string, role: UserRole, warehouseId: string | null) => Promise<{ success: boolean; message: string }>;
+  requestAppAccess: (email: string, fullName?: string) => Promise<{ status: 'active' | 'pending' | 'blocked' | 'error'; message: string }>;
+  checkLiveApprovalStatus: (email?: string) => Promise<{ approved: boolean; status: string; message: string }>;
   logout: () => void;
   approveUser: (userId: string, role: UserRole, warehouseId: string | null, permissions?: UserPermissions) => void;
   updateUserStatus: (userId: string, status: UserStatus) => void;
@@ -139,7 +141,17 @@ function setStored<T>(key: string, value: T): void {
 export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // State
   const [profiles, setProfiles] = useState<Profile[]>(() => {
-    const stored = getStored<Profile[]>('profiles', INITIAL_PROFILES);
+    const rawStored = getStored<Profile[]>('profiles', INITIAL_PROFILES);
+    const stored = rawStored.map(p => {
+      if (p.full_name?.includes('Selamawit') || p.email?.includes('selamawit')) {
+        return {
+          ...p,
+          full_name: 'Operations Manager',
+          email: 'manager@enterprise-erp.et',
+        };
+      }
+      return p;
+    });
     const hasOwner = stored.some(p => p.email.toLowerCase() === 'ashenafihailay645@gmail.com');
     if (!hasOwner && INITIAL_PROFILES.length > 0) {
       return [INITIAL_PROFILES[0], ...stored];
@@ -268,8 +280,191 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logout = () => {
-    // switch to pending user for demo preview, or prompt login
-    addToast('info', 'Logged Out', 'Signed out of session');
+    setCurrentUserId(null);
+    setStored('current_user_id', null);
+    addToast('info', 'Signed Out', 'Signed out of session. Enter your email to reconnect.');
+  };
+
+  // Play Store / First-Time Onboarding: Request Access by Email
+  const requestAppAccess = async (
+    email: string,
+    fullName: string = ''
+  ): Promise<{ status: 'active' | 'pending' | 'blocked' | 'error'; message: string }> => {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized || !normalized.includes('@')) {
+      return { status: 'error', message: 'Please enter a valid work email address.' };
+    }
+
+    const effectiveName = fullName.trim() || normalized.split('@')[0];
+
+    // 1. If System Owner email, recognize instantly
+    if (normalized === 'ashenafihailay645@gmail.com') {
+      const owner = profiles.find(p => p.email.toLowerCase() === normalized) || {
+        id: 'user-owner-00',
+        email: 'ashenafihailay645@gmail.com',
+        full_name: 'Ashenafi Hailay (System Owner)',
+        role: 'Admin' as UserRole,
+        company_id: 'comp-ethiopia-erp',
+        warehouse_id: null,
+        status: 'active' as UserStatus,
+        permissions: DEFAULT_ADMIN_PERMISSIONS,
+        created_at: new Date().toISOString(),
+      };
+      setProfiles(prev => {
+        if (!prev.some(p => p.email.toLowerCase() === normalized)) return [owner, ...prev];
+        return prev.map(p => (p.email.toLowerCase() === normalized ? { ...p, status: 'active' } : p));
+      });
+      setCurrentUserId(owner.id);
+      addToast('success', 'System Owner Authorized', 'Welcome back, Administrator!');
+      return { status: 'active', message: 'Welcome back, Administrator!' };
+    }
+
+    // 2. Query Supabase backend live
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        const { data: remoteUser, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('email', normalized)
+          .maybeSingle();
+
+        if (remoteUser && !error) {
+          setProfiles(prev => {
+            const exists = prev.some(p => p.id === remoteUser.id || p.email.toLowerCase() === normalized);
+            if (exists) {
+              return prev.map(p => (p.email.toLowerCase() === normalized ? { ...p, ...remoteUser } : p));
+            }
+            return [...prev, remoteUser];
+          });
+          setCurrentUserId(remoteUser.id);
+
+          if (remoteUser.status === 'active') {
+            addToast('success', 'Access Granted', `Welcome back, ${remoteUser.full_name}!`);
+            return { status: 'active', message: 'Access granted.' };
+          } else if (remoteUser.status === 'blocked') {
+            return { status: 'blocked', message: 'Your account is suspended by Administrator.' };
+          } else {
+            return { status: 'pending', message: 'Your request is pending administrator approval in Supabase.' };
+          }
+        }
+      } catch (err) {
+        console.warn('Supabase profile query warning:', err);
+      }
+    }
+
+    // 3. Check local cache
+    const localUser = profiles.find(p => p.email.toLowerCase() === normalized);
+    if (localUser) {
+      setCurrentUserId(localUser.id);
+      if (localUser.status === 'active') {
+        addToast('success', 'Access Granted', `Welcome back, ${localUser.full_name}!`);
+        return { status: 'active', message: 'Access granted.' };
+      }
+      return { status: localUser.status, message: 'Your request is pending administrator approval.' };
+    }
+
+    // 4. Brand New Play Store Install: Create profile with pending status
+    const newProfile: Profile = {
+      id: 'usr-' + Math.random().toString(36).substr(2, 9),
+      email: normalized,
+      full_name: effectiveName,
+      role: 'Staff',
+      company_id: 'comp-ethiopia-erp',
+      warehouse_id: null,
+      status: 'pending',
+      permissions: DEFAULT_STAFF_PERMISSIONS,
+      created_at: new Date().toISOString(),
+    };
+
+    setProfiles(prev => [...prev, newProfile]);
+    setCurrentUserId(newProfile.id);
+
+    // Sync to Supabase
+    if (supabase) {
+      try {
+        await supabase.from('profiles').upsert([newProfile]);
+      } catch (err) {
+        console.warn('Supabase new profile sync warning:', err);
+      }
+    }
+
+    // Send immediate Email Alert to Admin (ashenafihailay645@gmail.com)
+    await sendNewUserAlertEmail({
+      applicantName: newProfile.full_name,
+      applicantEmail: newProfile.email,
+      assignedRole: newProfile.role,
+      source: 'Play Store App Download',
+    });
+
+    logActivity('New App Download Access Request', {
+      email: newProfile.email,
+      full_name: newProfile.full_name,
+      status: 'pending',
+    });
+
+    addToast(
+      'warning',
+      'Access Request Sent',
+      'Your request was delivered to Administrator (ashenafihailay645@gmail.com) for authorization.'
+    );
+
+    return { status: 'pending', message: 'Request sent to Admin for approval.' };
+  };
+
+  // Poll / Check Live Approval Status against Supabase
+  const checkLiveApprovalStatus = async (
+    emailToCheck?: string
+  ): Promise<{ approved: boolean; status: string; message: string }> => {
+    const targetEmail = (emailToCheck || currentUser?.email || '').trim().toLowerCase();
+    if (!targetEmail) {
+      return { approved: false, status: 'unknown', message: 'No email address specified.' };
+    }
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('email', targetEmail)
+          .maybeSingle();
+
+        if (data && !error) {
+          setProfiles(prev => {
+            const exists = prev.some(p => p.id === data.id || p.email.toLowerCase() === targetEmail);
+            if (exists) {
+              return prev.map(p => (p.email.toLowerCase() === targetEmail ? { ...p, ...data } : p));
+            }
+            return [...prev, data];
+          });
+          setCurrentUserId(data.id);
+
+          if (data.status === 'active') {
+            addToast('success', 'Account Approved!', `Welcome ${data.full_name}! Your account is now active.`);
+            return { approved: true, status: 'active', message: 'Access approved by Administrator!' };
+          } else if (data.status === 'blocked') {
+            return { approved: false, status: 'blocked', message: 'Account suspended.' };
+          } else {
+            return { approved: false, status: 'pending', message: 'Still awaiting approval in Supabase.' };
+          }
+        }
+      } catch (err) {
+        console.warn('Supabase status check warning:', err);
+      }
+    }
+
+    const local = profiles.find(p => p.email.toLowerCase() === targetEmail);
+    if (local && local.status === 'active') {
+      setCurrentUserId(local.id);
+      return { approved: true, status: 'active', message: 'Access approved.' };
+    }
+
+    return {
+      approved: false,
+      status: local?.status || 'pending',
+      message: 'Still pending approval. Please ask the Administrator to approve in Supabase.',
+    };
   };
 
   const signUp = async (email: string, fullName: string, role: UserRole, warehouseId: string | null) => {
@@ -781,6 +976,8 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSelectedWarehouseId,
     loginAs,
     signUp,
+    requestAppAccess,
+    checkLiveApprovalStatus,
     logout,
     approveUser,
     updateUserStatus,

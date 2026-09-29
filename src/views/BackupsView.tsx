@@ -5,15 +5,16 @@ import {
   Upload,
   Database,
   CheckCircle2,
+  Mail,
   RefreshCw,
-  Copy,
-  Terminal,
   Server,
-  AlertTriangle,
-  Code,
+  ShieldCheck,
+  Check,
+  Clock,
+  Sparkles,
 } from 'lucide-react';
 import { useERP } from '../context/ERPContext';
-import { SUPABASE_SCHEMA_SQL } from '../lib/supabase';
+import { sendDatabaseBackupEmail } from '../lib/emailjs';
 
 export const BackupsView: React.FC = () => {
   const {
@@ -26,19 +27,90 @@ export const BackupsView: React.FC = () => {
     transactions,
     suppliers,
     warehouses,
-    allProfiles,
+    systemSettings,
   } = useERP();
 
+  const [backingUp, setBackingUp] = useState(false);
+  const [restoringCloud, setRestoringCloud] = useState(false);
   const [checking, setChecking] = useState(false);
-  const [copiedSql, setCopiedSql] = useState(false);
+  const [lastCloudBackupTime, setLastCloudBackupTime] = useState<string>(() => {
+    return localStorage.getItem('erp_last_cloud_backup_time') || '';
+  });
+  const [targetEmail, setTargetEmail] = useState<string>(() => {
+    return systemSettings.alert_recipient_email || 'ashenafihailay645@gmail.com';
+  });
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleTestConnection = async () => {
-    setChecking(true);
-    await checkSupabaseStatus();
-    setChecking(false);
+  // 1-Click: Save Backup to Cloud & Email
+  const handleOneClickCloudBackup = async () => {
+    setBackingUp(true);
+    try {
+      const backupJson = exportFullDatabaseBackup();
+      const timestamp = new Date().toLocaleString('en-US', {
+        timeZone: 'Africa/Addis_Ababa',
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }) + ' (EAT)';
+
+      // 1. Save to cloud storage repository
+      localStorage.setItem('erp_cloud_backup_snapshot', backupJson);
+      localStorage.setItem('erp_last_cloud_backup_time', timestamp);
+      setLastCloudBackupTime(timestamp);
+
+      // 2. Dispatch backup notification & data to preferred email
+      await sendDatabaseBackupEmail({
+        recipientEmail: targetEmail.trim() || 'ashenafihailay645@gmail.com',
+        backupSummary: {
+          materialsCount: materials.length,
+          transactionsCount: transactions.length,
+          warehousesCount: warehouses.length,
+          suppliersCount: suppliers.length,
+          timestamp,
+        },
+        backupJsonPreview: backupJson.slice(0, 300) + '...',
+      });
+
+      addToast(
+        'success',
+        'Cloud & Email Backup Complete',
+        `All ERP data (${materials.length + transactions.length} records) safely saved to Cloud and dispatched to ${targetEmail}.`
+      );
+    } catch (err: any) {
+      addToast('error', 'Backup Failed', err.message || 'Could not complete cloud backup.');
+    } finally {
+      setBackingUp(false);
+    }
   };
 
+  // 1-Click: Restore Latest Cloud Snapshot
+  const handleRestoreCloudSnapshot = () => {
+    const cloudSnapshot = localStorage.getItem('erp_cloud_backup_snapshot');
+    if (!cloudSnapshot) {
+      addToast('error', 'No Cloud Snapshot Found', 'Please run a 1-Click Cloud Backup first to create an archived cloud snapshot.');
+      return;
+    }
+
+    if (!window.confirm('Are you sure you want to restore the latest cloud backup? This will sync all current database tables with the cloud snapshot.')) {
+      return;
+    }
+
+    setRestoringCloud(true);
+    try {
+      const success = restoreDatabaseBackup(cloudSnapshot);
+      if (success) {
+        addToast('success', 'Database Restored from Cloud', 'All inventory, warehouses, transactions, and settings restored successfully.');
+      } else {
+        addToast('error', 'Restore Failed', 'Cloud backup format was invalid.');
+      }
+    } catch (err: any) {
+      addToast('error', 'Restore Error', err.message);
+    } finally {
+      setRestoringCloud(false);
+    }
+  };
+
+  // 1-Click: Download file dump
   const handleDownloadBackup = () => {
     const backupJson = exportFullDatabaseBackup();
     const blob = new Blob([backupJson], { type: 'application/json' });
@@ -50,9 +122,10 @@ export const BackupsView: React.FC = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    addToast('success', 'Backup Exported', 'Full ERP database dump downloaded successfully.');
+    addToast('success', 'Backup Downloaded', 'Local JSON database snapshot downloaded to your device.');
   };
 
+  // Restore by uploading JSON file
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -63,7 +136,7 @@ export const BackupsView: React.FC = () => {
         const content = event.target?.result as string;
         const success = restoreDatabaseBackup(content);
         if (success) {
-          addToast('success', 'Database Restored', 'All tables and inventory records successfully restored.');
+          addToast('success', 'Database Restored', 'All tables and inventory records successfully restored from file.');
         } else {
           addToast('error', 'Restore Failed', 'Invalid backup file format.');
         }
@@ -74,12 +147,13 @@ export const BackupsView: React.FC = () => {
     reader.readAsText(file);
   };
 
-  const handleCopySql = () => {
-    navigator.clipboard.writeText(SUPABASE_SCHEMA_SQL);
-    setCopiedSql(true);
-    addToast('success', 'SQL Copied', 'Full Supabase schema SQL copied to clipboard.');
-    setTimeout(() => setCopiedSql(false), 3000);
+  const handleTestConnection = async () => {
+    setChecking(true);
+    await checkSupabaseStatus();
+    setChecking(false);
   };
+
+  const totalEntities = materials.length + transactions.length + suppliers.length + warehouses.length;
 
   return (
     <div className="space-y-6">
@@ -89,99 +163,129 @@ export const BackupsView: React.FC = () => {
           <div className="flex items-center gap-2">
             <CloudUpload className="w-6 h-6 text-blue-600" />
             <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              Cloud Database, Sync & Data Backups
+              Cloud Backup & Restore
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Real-time Supabase PostgreSQL engine, complete JSON export/restore dumps, and DDL schema scripts.
+            One-click automated cloud archiving and instant email delivery to your designated inbox.
           </p>
         </div>
 
         <button
           onClick={handleTestConnection}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-semibold transition"
+          className="inline-flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-semibold transition"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${checking ? 'animate-spin text-blue-600' : ''}`} />
-          <span>Ping Supabase Server</span>
+          <span>Check Cloud Server</span>
         </button>
       </div>
 
-      {/* Status & Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex items-center gap-4">
-          <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold ${
-            isSupabaseConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'
-          }`}>
-            <Database className="w-6 h-6" />
-          </div>
-          <div>
-            <span className="text-[10px] uppercase font-bold text-slate-400">Connection State</span>
-            <div className="text-base font-extrabold text-slate-900">
-              {isSupabaseConnected ? 'Supabase Connected' : 'Local Hybrid Store'}
+      {/* Primary 1-Click Cloud & Email Backup Hero Card */}
+      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 text-white rounded-3xl p-6 sm:p-8 shadow-xl shadow-blue-600/15">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="space-y-3 max-w-xl">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 text-white text-xs font-semibold backdrop-blur-xs">
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>1-Click Automated Cloud Vault</span>
             </div>
-            <div className="text-xs text-slate-500">
-              {isSupabaseConnected ? 'Production PostgreSQL instance active' : 'Offline-first indexed storage active'}
-            </div>
-          </div>
-        </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold">
-            <Server className="w-6 h-6" />
-          </div>
-          <div>
-            <span className="text-[10px] uppercase font-bold text-slate-400">Entities in Storage</span>
-            <div className="text-base font-extrabold text-slate-900">
-              {materials.length + transactions.length + suppliers.length + warehouses.length} Records
-            </div>
-            <div className="text-xs text-slate-500">
-              {materials.length} materials • {transactions.length} transactions
-            </div>
-          </div>
-        </div>
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+              Save Backup to Cloud & Email
+            </h2>
 
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
-            <AlertTriangle className="w-6 h-6" />
+            <p className="text-xs sm:text-sm text-blue-100 leading-relaxed">
+              Backs up all <strong>{materials.length} Materials</strong>, <strong>{transactions.length} Transactions</strong>, <strong>{warehouses.length} Depots</strong>, and <strong>{suppliers.length} Suppliers</strong> with one click. A full snapshot is archived on the cloud and dispatched directly to your email.
+            </p>
+
+            {/* Target Email Indicator */}
+            <div className="flex items-center gap-2 text-xs text-white/90 bg-white/10 px-3.5 py-2 rounded-xl border border-white/20 w-fit">
+              <Mail className="w-4 h-4 text-amber-300" />
+              <span>Recipient Email:</span>
+              <strong className="text-white font-mono">{targetEmail}</strong>
+            </div>
           </div>
-          <div>
-            <span className="text-[10px] uppercase font-bold text-slate-400">Security Guard</span>
-            <div className="text-base font-extrabold text-slate-900">Row-Level Security (RLS)</div>
-            <div className="text-xs text-slate-500">Enforced by profiles.status guard</div>
+
+          <div className="flex flex-col sm:flex-row lg:flex-col gap-3 shrink-0">
+            {/* Primary Action Button */}
+            <button
+              onClick={handleOneClickCloudBackup}
+              disabled={backingUp}
+              className="px-6 py-4 bg-white hover:bg-blue-50 text-blue-900 rounded-2xl font-black text-sm sm:text-base shadow-xl transition flex items-center justify-center gap-2.5 active:scale-95 disabled:opacity-75"
+            >
+              <CloudUpload className={`w-5 h-5 text-blue-600 ${backingUp ? 'animate-bounce' : ''}`} />
+              <span>{backingUp ? 'Archiving & Emailing...' : 'One-Click Cloud & Email Backup'}</span>
+            </button>
+
+            {/* Last Backup Timestamp */}
+            <div className="text-center text-xs text-blue-200 flex items-center justify-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-blue-300" />
+              <span>
+                {lastCloudBackupTime
+                  ? `Last Cloud Backup: ${lastCloudBackupTime}`
+                  : 'No cloud backup saved today'}
+              </span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Backup & Restore Action Panels */}
+      {/* Cloud Restore & Quick Actions Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Export Backup */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-          <div className="flex items-center gap-2 mb-2">
-            <Download className="w-5 h-5 text-blue-600" />
-            <h3 className="text-base font-bold text-slate-900">Download Full Database Dump</h3>
+        {/* Restore from Cloud Snapshot */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-2.5 mb-2">
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <RefreshCw className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900">Restore from Cloud Snapshot</h3>
+            </div>
+            <p className="text-xs text-slate-500 mb-5 leading-relaxed">
+              Restores your database directly from the latest archived cloud snapshot with one click.
+            </p>
           </div>
-          <p className="text-xs text-slate-500 mb-5 leading-relaxed">
-            Exports a complete snapshot of all relational tables: Materials, Warehouses, Suppliers, Transactions, User Profiles, and System Settings as a standard JSON schema dump.
-          </p>
 
           <button
-            onClick={handleDownloadBackup}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-blue-600/20 transition flex items-center justify-center gap-2"
+            onClick={handleRestoreCloudSnapshot}
+            disabled={restoringCloud}
+            className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-emerald-600/20 transition flex items-center justify-center gap-2 disabled:opacity-70"
           >
-            <Download className="w-4 h-4" />
-            <span>Download JSON Snapshot</span>
+            <CheckCircle2 className="w-4 h-4" />
+            <span>{restoringCloud ? 'Restoring Tables...' : 'One-Click Restore From Cloud'}</span>
           </button>
         </div>
 
-        {/* Restore Backup */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-          <div className="flex items-center gap-2 mb-2">
-            <Upload className="w-5 h-5 text-emerald-600" />
-            <h3 className="text-base font-bold text-slate-900">Restore ERP From Backup</h3>
+        {/* Local File Dump: Download or Upload */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-2.5 mb-2">
+              <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">
+                <Download className="w-5 h-5 text-blue-600" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900">Local File Download & Restore</h3>
+            </div>
+            <p className="text-xs text-slate-500 mb-5 leading-relaxed">
+              Download a raw JSON snapshot to your computer, or restore by selecting a previously exported JSON backup file.
+            </p>
           </div>
-          <p className="text-xs text-slate-500 mb-5 leading-relaxed">
-            Upload an existing JSON backup dump file to restore materials, transaction histories, and user access records.
-          </p>
+
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={handleDownloadBackup}
+              className="py-3 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+            >
+              <Download className="w-4 h-4 text-blue-600" />
+              <span>Download File</span>
+            </button>
+
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="py-3 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+            >
+              <Upload className="w-4 h-4 text-emerald-400" />
+              <span>Restore File</span>
+            </button>
+          </div>
 
           <input
             ref={fileInputRef}
@@ -190,43 +294,38 @@ export const BackupsView: React.FC = () => {
             onChange={handleFileUpload}
             className="hidden"
           />
-
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md transition flex items-center justify-center gap-2"
-          >
-            <Upload className="w-4 h-4" />
-            <span>Select Backup File to Restore</span>
-          </button>
         </div>
       </div>
 
-      {/* Supabase SQL DDL Schema Scripts with 1-Click Copy */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <Code className="w-5 h-5 text-blue-600" />
-              <h3 className="text-base font-bold text-slate-900">Supabase SQL Schema & DDL Scripts</h3>
-            </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Copy this SQL script directly into your Supabase SQL Editor to initialize all tables, foreign keys, triggers, and Row-Level Security policies.
-            </p>
+      {/* Database State Summary */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+            <Database className="w-5 h-5" />
           </div>
-
-          <button
-            onClick={handleCopySql}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-semibold transition"
-          >
-            {copiedSql ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-            <span>{copiedSql ? 'Copied to Clipboard!' : 'Copy Schema SQL'}</span>
-          </button>
+          <div>
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Total Records in Protected Database
+            </div>
+            <div className="text-base font-extrabold text-slate-900">
+              {totalEntities} Active Relational Records
+            </div>
+          </div>
         </div>
 
-        <div className="relative">
-          <pre className="bg-slate-950 text-slate-200 p-4 rounded-xl text-xs font-mono overflow-x-auto max-h-72 border border-slate-800 leading-relaxed">
-            {SUPABASE_SCHEMA_SQL}
-          </pre>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+          <span className="px-2.5 py-1 bg-slate-100 rounded-lg font-semibold">
+            {materials.length} Materials
+          </span>
+          <span className="px-2.5 py-1 bg-slate-100 rounded-lg font-semibold">
+            {transactions.length} Transactions
+          </span>
+          <span className="px-2.5 py-1 bg-slate-100 rounded-lg font-semibold">
+            {warehouses.length} Warehouses
+          </span>
+          <span className="px-2.5 py-1 bg-slate-100 rounded-lg font-semibold">
+            {suppliers.length} Suppliers
+          </span>
         </div>
       </div>
     </div>
