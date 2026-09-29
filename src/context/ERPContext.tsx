@@ -158,7 +158,9 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     return stored;
   });
-  const [currentUserId, setCurrentUserId] = useState<string>(() => getStored('current_user_id', 'user-owner-00'));
+  const [currentUserId, setCurrentUserId] = useState<string | null>(() => {
+    return getStored<string | null>('current_user_id', null);
+  });
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('ALL');
   const [adminSecurityPin, setAdminSecurityPinState] = useState<string>(() => getStored('admin_security_pin', '2026'));
 
@@ -201,7 +203,13 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Sync to localStorage
   useEffect(() => { setStored('profiles', profiles); }, [profiles]);
-  useEffect(() => { setStored('current_user_id', currentUserId); }, [currentUserId]);
+  useEffect(() => {
+    if (currentUserId) {
+      setStored('current_user_id', currentUserId);
+    } else {
+      localStorage.removeItem(STORAGE_PREFIX + 'current_user_id');
+    }
+  }, [currentUserId]);
   useEffect(() => { setStored('warehouses', warehouses); }, [warehouses]);
   useEffect(() => { setStored('suppliers', suppliers); }, [suppliers]);
   useEffect(() => { setStored('materials', materials); }, [materials]);
@@ -210,9 +218,10 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => { setStored('backups', backups); }, [backups]);
   useEffect(() => { setStored('system_settings', systemSettings); }, [systemSettings]);
 
-  // Current User resolution
+  // Current User resolution - Only resolves if currentUserId is set!
   const currentUser = useMemo(() => {
-    return profiles.find(p => p.id === currentUserId) || profiles[0] || null;
+    if (!currentUserId) return null;
+    return profiles.find(p => p.id === currentUserId) || null;
   }, [profiles, currentUserId]);
 
   // Toast dispatch
@@ -281,7 +290,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const logout = () => {
     setCurrentUserId(null);
-    setStored('current_user_id', null);
+    localStorage.removeItem(STORAGE_PREFIX + 'current_user_id');
     addToast('info', 'Signed Out', 'Signed out of session. Enter your email to reconnect.');
   };
 
