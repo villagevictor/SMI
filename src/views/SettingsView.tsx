@@ -3,28 +3,15 @@ import {
   Settings,
   Mail,
   Building2,
-  Database,
   Send,
-  CheckCircle2,
-  AlertCircle,
   Save,
   Key,
-  Copy,
-  Check,
-  ExternalLink,
-  RefreshCw,
 } from 'lucide-react';
 import { useERP } from '../context/ERPContext';
 import { sendLowStockAlertEmail } from '../lib/emailjs';
-import {
-  getStoredSupabaseConfig,
-  saveStoredSupabaseConfig,
-  testSupabaseConnection,
-  SUPABASE_SQL_SCHEMA,
-} from '../lib/supabase';
 
 export const SettingsView: React.FC = () => {
-  const { systemSettings, updateSettings, addToast, materials, isSupabaseConnected } = useERP();
+  const { systemSettings, updateSettings, addToast, materials } = useERP();
 
   const [companyName, setCompanyName] = useState(systemSettings.company_name);
   const [currency, setCurrency] = useState(systemSettings.currency);
@@ -39,32 +26,6 @@ export const SettingsView: React.FC = () => {
   const [alertEmail, setAlertEmail] = useState(systemSettings.alert_recipient_email || 'ashenafihailay645@gmail.com');
 
   const [testingEmail, setTestingEmail] = useState(false);
-
-  // Supabase Custom Project settings
-  const initialSupabase = getStoredSupabaseConfig();
-  const [supabaseUrl, setSupabaseUrl] = useState(initialSupabase.url);
-  const [supabaseAnonKey, setSupabaseAnonKey] = useState(initialSupabase.anonKey);
-  const [testingSupabase, setTestingSupabase] = useState(false);
-  const [copiedSchema, setCopiedSchema] = useState(false);
-
-  const handleTestAndSaveSupabase = async () => {
-    setTestingSupabase(true);
-    const result = await testSupabaseConnection(supabaseUrl, supabaseAnonKey);
-    setTestingSupabase(false);
-    if (result.success) {
-      saveStoredSupabaseConfig(supabaseUrl, supabaseAnonKey);
-      addToast('success', 'Supabase Connected', result.message);
-    } else {
-      addToast('error', 'Connection Error', result.message);
-    }
-  };
-
-  const handleCopySchema = () => {
-    navigator.clipboard.writeText(SUPABASE_SQL_SCHEMA);
-    setCopiedSchema(true);
-    addToast('info', 'SQL Copied', 'SQL Schema copied to clipboard. Paste it into your Supabase SQL Editor.');
-    setTimeout(() => setCopiedSchema(false), 3000);
-  };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -264,124 +225,6 @@ export const SettingsView: React.FC = () => {
                 <span>{testingEmail ? 'Sending Test Alert...' : 'Send Test Low-Stock Email Alert'}</span>
               </button>
             </div>
-          </div>
-        </div>
-
-        {/* Supabase Cloud Database Connection Card */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600">
-                <Database className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2">
-                  <span>Supabase Cloud Database Connection</span>
-                  <span
-                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                      isSupabaseConnected
-                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                        : 'bg-amber-100 text-amber-800 border border-amber-300'
-                    }`}
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        isSupabaseConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-                      }`}
-                    />
-                    {isSupabaseConnected ? 'Connected & Active' : 'Not Connected'}
-                  </span>
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Connect your own Supabase project to sync users, inventory, stock logs, and multi-device approvals.
-                </p>
-              </div>
-            </div>
-
-            <a
-              href="https://supabase.com/dashboard"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3.5 py-2 rounded-xl transition border border-emerald-200 self-start sm:self-auto"
-            >
-              <span>Open Supabase Dashboard</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          </div>
-
-          {/* Quick Setup Instructions */}
-          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-2">
-            <div className="font-bold text-slate-800 text-[11px] uppercase tracking-wider">
-              How to Connect Your Supabase Project (3 Easy Steps):
-            </div>
-            <ol className="list-decimal list-inside space-y-1 text-[11.5px] leading-relaxed">
-              <li>
-                Go to <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline font-semibold">supabase.com/dashboard</a> and click <strong>"+ New Project"</strong>.
-              </li>
-              <li>
-                In your project, click the <strong>Settings (gear icon)</strong> &gt; <strong>Data API</strong> (or API settings).
-              </li>
-              <li>
-                Copy the <strong>Project URL</strong> and <strong>anon / public API Key</strong> and paste them in the fields below.
-              </li>
-            </ol>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Your Supabase Project URL <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="url"
-                required
-                value={supabaseUrl}
-                onChange={e => setSupabaseUrl(e.target.value)}
-                placeholder="https://your-project-id.supabase.co"
-                className="w-full px-3.5 py-2.5 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-hidden font-mono"
-              />
-              <p className="text-[11px] text-slate-400 mt-1">
-                Example: <code className="text-slate-600 font-mono">https://xyzcompany.supabase.co</code>
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Your Supabase Anon / Public Key <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={supabaseAnonKey}
-                onChange={e => setSupabaseAnonKey(e.target.value)}
-                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
-                className="w-full px-3.5 py-2.5 text-xs sm:text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-hidden font-mono"
-              />
-              <p className="text-[11px] text-slate-400 mt-1">
-                Found under <strong>Project Settings &gt; Data API &gt; Project API keys &gt; anon public</strong>.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={handleCopySchema}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition border border-slate-300"
-            >
-              {copiedSchema ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-              <span>{copiedSchema ? 'SQL Schema Copied!' : 'Copy Database SQL Schema'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleTestAndSaveSupabase}
-              disabled={testingSupabase}
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold rounded-xl shadow-md transition disabled:opacity-75"
-            >
-              <RefreshCw className={`w-4 h-4 ${testingSupabase ? 'animate-spin' : ''}`} />
-              <span>{testingSupabase ? 'Verifying Connection...' : 'Save & Connect to Supabase'}</span>
-            </button>
           </div>
         </div>
 
