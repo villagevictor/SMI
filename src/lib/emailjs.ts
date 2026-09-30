@@ -7,7 +7,7 @@ export function getStoredEmailJSConfig(): EmailJSConfig {
   const envServiceId = import.meta.env.VITE_EMAILJS_SERVICE_ID || '';
   const envTemplateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID || '';
   const envPublicKey = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || '';
-  const envAdminEmail = import.meta.env.VITE_ADMIN_ALERT_EMAIL || 'ashenafihailay645@gmail.com';
+  const envAdminEmail = import.meta.env.VITE_ADMIN_ALERT_EMAIL || 'backup.admin@company.com';
 
   const stored = localStorage.getItem(STORAGE_KEY_EMAILJS);
   if (stored) {
@@ -205,7 +205,7 @@ export async function sendDatabaseBackupEmail(params: {
   backupJsonPreview?: string;
 }): Promise<EmailDispatchResult> {
   const config = getStoredEmailJSConfig();
-  const effectiveRecipient = params.recipientEmail || config.adminEmail || 'ashenafihailay645@gmail.com';
+  const effectiveRecipient = params.recipientEmail || config.adminEmail || 'backup.admin@company.com';
 
   const templateParams = {
     to_email: effectiveRecipient,

@@ -37,7 +37,12 @@ export const BackupsView: React.FC = () => {
     return localStorage.getItem('erp_last_cloud_backup_time') || '';
   });
   const [targetEmail, setTargetEmail] = useState<string>(() => {
-    return systemSettings.alert_recipient_email || 'ashenafihailay645@gmail.com';
+    const saved = localStorage.getItem('erp_backup_recipient_email');
+    if (saved && saved.trim()) return saved.trim();
+    if (systemSettings.alert_recipient_email && !systemSettings.alert_recipient_email.includes('ashenafihailay645')) {
+      return systemSettings.alert_recipient_email;
+    }
+    return 'backup.admin@company.com';
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -53,6 +58,9 @@ export const BackupsView: React.FC = () => {
         timeStyle: 'short',
       }) + ' (EAT)';
 
+      const effectiveRecipient = targetEmail.trim() || 'backup.admin@company.com';
+      localStorage.setItem('erp_backup_recipient_email', effectiveRecipient);
+
       // 1. Save to cloud storage repository
       localStorage.setItem('erp_cloud_backup_snapshot', backupJson);
       localStorage.setItem('erp_last_cloud_backup_time', timestamp);
@@ -60,7 +68,7 @@ export const BackupsView: React.FC = () => {
 
       // 2. Dispatch backup notification & data to preferred email
       await sendDatabaseBackupEmail({
-        recipientEmail: targetEmail.trim() || 'ashenafihailay645@gmail.com',
+        recipientEmail: effectiveRecipient,
         backupSummary: {
           materialsCount: materials.length,
           transactionsCount: transactions.length,
@@ -74,7 +82,7 @@ export const BackupsView: React.FC = () => {
       addToast(
         'success',
         'Cloud & Email Backup Complete',
-        `All ERP data (${materials.length + transactions.length} records) safely saved to Cloud and dispatched to ${targetEmail}.`
+        `All ERP data (${materials.length + transactions.length} records) safely saved to Cloud and dispatched to ${effectiveRecipient}.`
       );
     } catch (err: any) {
       addToast('error', 'Backup Failed', err.message || 'Could not complete cloud backup.');
@@ -197,11 +205,30 @@ export const BackupsView: React.FC = () => {
               Backs up all <strong>{materials.length} Materials</strong>, <strong>{transactions.length} Transactions</strong>, <strong>{warehouses.length} Depots</strong>, and <strong>{suppliers.length} Suppliers</strong> with one click. A full snapshot is archived on the cloud and dispatched directly to your email.
             </p>
 
-            {/* Target Email Indicator */}
-            <div className="flex items-center gap-2 text-xs text-white/90 bg-white/10 px-3.5 py-2 rounded-xl border border-white/20 w-fit">
-              <Mail className="w-4 h-4 text-amber-300" />
-              <span>Recipient Email:</span>
-              <strong className="text-white font-mono">{targetEmail}</strong>
+            {/* Target Email Field (Changeable) */}
+            <div className="bg-white/10 backdrop-blur-xs p-3.5 rounded-2xl border border-white/20 space-y-1.5 max-w-md">
+              <div className="flex items-center justify-between text-xs text-blue-100">
+                <span className="flex items-center gap-1.5 font-semibold text-white">
+                  <Mail className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Backup Recipient Email:</span>
+                </span>
+                <span className="text-[10px] uppercase font-bold text-amber-300 tracking-wider bg-amber-400/20 px-2 py-0.5 rounded-full border border-amber-300/30">
+                  Changeable
+                </span>
+              </div>
+              <input
+                type="email"
+                value={targetEmail}
+                onChange={(e) => {
+                  setTargetEmail(e.target.value);
+                  localStorage.setItem('erp_backup_recipient_email', e.target.value.trim());
+                }}
+                placeholder="e.g. backup.admin@company.com"
+                className="w-full px-3 py-2 bg-white/15 hover:bg-white/20 focus:bg-white text-white focus:text-slate-900 rounded-xl text-xs sm:text-sm font-mono border border-white/30 placeholder-blue-200/60 focus:outline-hidden focus:ring-2 focus:ring-amber-300 transition"
+              />
+              <p className="text-[11px] text-blue-200">
+                Enter any email address where you would like the cloud backup snapshot dispatched.
+              </p>
             </div>
           </div>
 

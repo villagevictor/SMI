@@ -193,7 +193,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       emailjs_service_id: 'service_enterprise_erp',
       emailjs_template_id: 'template_low_stock',
       emailjs_public_key: 'user_public_key_mock',
-      alert_recipient_email: 'ashenafihailay645@gmail.com',
+      alert_recipient_email: 'backup.admin@company.com',
     })
   );
 

@@ -23,7 +23,9 @@ export const SettingsView: React.FC = () => {
   const [serviceId, setServiceId] = useState(systemSettings.emailjs_service_id || 'service_enterprise_erp');
   const [templateId, setTemplateId] = useState(systemSettings.emailjs_template_id || 'template_low_stock');
   const [publicKey, setPublicKey] = useState(systemSettings.emailjs_public_key || 'user_public_key_mock');
-  const [alertEmail, setAlertEmail] = useState(systemSettings.alert_recipient_email || 'ashenafihailay645@gmail.com');
+  const [alertEmail, setAlertEmail] = useState(
+    systemSettings.alert_recipient_email || 'backup.admin@company.com'
+  );
 
   const [testingEmail, setTestingEmail] = useState(false);
 
