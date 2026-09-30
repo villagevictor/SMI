@@ -373,24 +373,15 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // 3. Check local cache
-    const localUser = profiles.find(p => p.email.toLowerCase() === normalized);
-    if (localUser) {
-      setCurrentUserId(localUser.id);
-      if (localUser.status === 'active') {
-        addToast('success', 'Access Granted', `Welcome back, ${localUser.full_name}!`);
-        return { status: 'active', message: 'Access granted.' };
-      }
-      return { status: localUser.status, message: 'Your request is pending administrator approval.' };
-    }
-
-    // 4. Brand New Play Store Install: Create profile with pending status
+    // 3. Register user profile in Supabase
     let assignedUserId = 'usr-' + Math.random().toString(36).substr(2, 9);
+    let supabaseStatusMessage = '';
 
-    // Sync to Supabase: Sign up user via auth.signUp to satisfy foreign key constraint and trigger profile creation
     if (supabase) {
       try {
         const generatedPassword = `ErpApp2026!_${normalized.replace(/[^a-zA-Z0-9]/g, '')}`;
+
+        // Step A: Attempt Supabase Auth Sign Up
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email: normalized,
           password: generatedPassword,
@@ -403,7 +394,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         if (authData?.user?.id) {
           assignedUserId = authData.user.id;
-          // Ensure profile has correct status, role, and details
+          // Ensure profile has correct status, role, and details in profiles table
           await supabase.from('profiles').upsert({
             id: authData.user.id,
             email: normalized,
@@ -412,23 +403,47 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             status: 'pending',
           });
         } else if (authError) {
-          console.warn('Supabase auth signup note:', authError.message);
-          // If auth user already exists, update their profile
-          const { data: existingProf } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('email', normalized)
-            .maybeSingle();
+          console.warn('Supabase auth signup notice:', authError.message);
 
-          if (existingProf?.id) {
-            assignedUserId = existingProf.id;
-            await supabase
-              .from('profiles')
-              .update({ status: 'pending', full_name: effectiveName })
-              .eq('id', existingProf.id);
+          // Step B: If already in auth.users, sign in to retrieve UID and ensure profile exists
+          const { data: signInData } = await supabase.auth.signInWithPassword({
+            email: normalized,
+            password: generatedPassword,
+          });
+
+          if (signInData?.user?.id) {
+            assignedUserId = signInData.user.id;
+            await supabase.from('profiles').upsert({
+              id: signInData.user.id,
+              email: normalized,
+              full_name: effectiveName,
+              role: 'Staff',
+              status: 'pending',
+            });
+          } else {
+            // Step C: Try direct profile upsert with valid UUID
+            const fallbackUUID =
+              typeof crypto !== 'undefined' && crypto.randomUUID
+                ? crypto.randomUUID()
+                : '583a7fc4-af6e-44c8-8d44-a1c43aa91e50';
+
+            const { error: directErr } = await supabase.from('profiles').upsert({
+              id: fallbackUUID,
+              email: normalized,
+              full_name: effectiveName,
+              role: 'Staff',
+              status: 'pending',
+            });
+
+            if (!directErr) {
+              assignedUserId = fallbackUUID;
+            } else {
+              supabaseStatusMessage = directErr.message || authError.message;
+            }
           }
         }
-      } catch (err) {
+      } catch (err: any) {
+        supabaseStatusMessage = err.message || 'Supabase profile sync error';
         console.warn('Supabase new profile sync error:', err);
       }
     }
@@ -468,7 +483,12 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'Your request was delivered to Administrator (ashenafihailay645@gmail.com) for authorization.'
     );
 
-    return { status: 'pending', message: 'Request sent to Admin for approval.' };
+    return {
+      status: 'pending',
+      message: supabaseStatusMessage
+        ? `Request registered locally. Supabase note: ${supabaseStatusMessage}`
+        : 'Request successfully registered in Supabase. Awaiting administrator approval.',
+    };
   };
 
   // Poll / Check Live Approval Status against Supabase

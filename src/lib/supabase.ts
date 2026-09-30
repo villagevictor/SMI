@@ -15,8 +15,8 @@ export function getStoredSupabaseConfig(): { url: string; anonKey: string } {
   const storedKey = (localStorage.getItem(STORAGE_KEY_KEY) || '').trim();
 
   return {
-    url: storedUrl || envUrl,
-    anonKey: storedKey || envKey,
+    url: storedUrl && storedUrl.startsWith('http') ? storedUrl : envUrl,
+    anonKey: storedKey && storedKey.length > 20 ? storedKey : envKey,
   };
 }
 
